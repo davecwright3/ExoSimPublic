@@ -228,8 +228,63 @@ def Psf_Interp(zfile, delta_pix, WavRange):
         redata[..., i] /= redata[..., i].sum()
     return interpolate.interp1d(inwl, redata, axis=2, bounds_error=False, fill_value=0.0, kind='quadratic')(WavRange)
 
+def webb_Psf_Interp(zfile, osf, WavRange, y_trace):
+    r'''WebbPSF Interpolation
 
-def Psf(wl, fnum, delta, nzero = 4, shape='airy'):
+    Use a set of PSFs made by WebbPSF to fill the wavelength range with monochromatic PSFs.
+
+    Parameters
+    ---------
+    zfile : string
+      input PSF fits file
+    osf : scalar
+      detector oversampling factor
+    WavRange : ndarray [units of length]
+      array of wavelengths in micron
+    y_trace : ndarray [units of length]
+      Array of y positions on trace
+
+
+    Returns
+    -------
+    PSF interpolated data cube. Area normalised to unity.
+
+    '''
+    hdulist = pyfits.open(zfile)
+    NAXIS1, NAXIS2 = hdulist[0].header['NAXIS1'], hdulist[0].header['NAXIS2']
+    fits_osf = hdulist[0].header['OVERSAMP']
+    num_pix_x, num_pix_y = np.trunc(NAXIS1/fits_osf * osf).astype(np.int),\
+                           np.trunc(NAXIS2/fits_osf * osf).astype(np.int)
+
+    inwl   = np.zeros(len(hdulist))
+    redata = np.zeros((num_pix_y, num_pix_x, len(hdulist)))
+
+    # get offset from center
+    ypix_shifts =  y_trace % 1
+    scalef = NAXIS2 / 2
+    # scale the shifts for the [-1,1] range
+    shift = ypix_shifts / scalef
+    shift[np.isnan(shift)] = 0
+
+    xin = np.linspace(-1.0, 1.0, NAXIS1)
+    yin = np.linspace(-1.0, 1.0, NAXIS2)
+
+    xout = np.linspace(-1.0, 1.0, num_pix_x)
+    yout = np.linspace(-1.0, 1.0, num_pix_y)
+
+    for i, hdu in enumerate(hdulist):
+        inwl[i]   = np.float64(hdu.header['WAVELEN'])
+        f = interpolate.RectBivariateSpline(xin, yin-shift[i], hdu.data)
+        redata[..., i] = f(xout,yout)
+
+        redata[..., i] /= redata[..., i].sum()
+
+    inwl = inwl * pq.m
+    inwl = inwl.rescale(pq.um)
+    return interpolate.interp1d(inwl, redata, axis=2, bounds_error=False, fill_value=0.0, kind='quadratic')(WavRange)
+
+
+def Psf(wl, y_trace, fnum, delta, nzero = 4, shape='airy'):
   '''
   Calculates an Airy Point Spread Function arranged as a data-cube. The spatial axies are 
   0 and 1. The wavelength axis is 2. Each PSF area is normalised to unity.
@@ -238,6 +293,8 @@ def Psf(wl, fnum, delta, nzero = 4, shape='airy'):
   ----------
   wl	: ndarray [physical dimension of length]
     array of wavelengths at which to calculate the PSF
+  y_trace : ndarray [units of length]
+    array of y positions on trace
   fnum : scalar
     Instrument f/number
   delta : scalar
@@ -268,15 +325,23 @@ def Psf(wl, fnum, delta, nzero = 4, shape='airy'):
   x = np.linspace(-Nx*delta.item(), Nx*delta.item(), 2*Nx+1)*delta.units
   y = np.linspace(-Ny*delta.item(), Ny*delta.item(), 2*Ny+1)*delta.units
   
+  # get the shift in each column along trace
+  shifts = y_trace % 1 * pq.um
+
   yy, xx = np.meshgrid(y, x)
   
-  if shape=='airy':
-    arg = 1.0e-20+np.pi*np.multiply.outer(np.sqrt(yy**2 + xx**2), d)
-    img   = (scipy.special.j1(arg)/arg)**2
-  elif shape=='gauss':
-    arg = np.multiply.outer(yy**2 + xx**2, d)
-    img = np.exp(-arg)
-  
+  img = np.zeros((yy.shape[0],yy.shape[1],d.shape[0]))
+
+  for i in np.arange(len(wl)):
+
+      if shape=='airy':
+          arg  = 1.0e-20+np.pi* np.sqrt((yy+shifts[i])**2 + xx**2) * d[i]
+          img[...,i] = (scipy.special.j1(arg.magnitude)/arg)**2
+
+      elif shape=='gauss':
+          arg = np.multiply.outer((yy+shifts[i])**2 + xx**2, d[i])
+          img[...,i] = np.exp(-arg)
+
   norm = img.sum(axis=0).sum(axis=0)
   img /= norm
   
