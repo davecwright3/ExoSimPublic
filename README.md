@@ -9,4 +9,4 @@ This fork of ExoSim has simulating JWST as its goal. There are a number of featu
 - Ability to use WebbPSF PSFs
 - Emulation of JWST detector readout patterns
 
-This is a work-in-progress. See the project page for current status.
+This is a work-in-progress. See the [projects](https://github.com/davecwright3/ExoSimPublic/projects) page for current status.
