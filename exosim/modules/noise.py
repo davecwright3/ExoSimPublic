@@ -180,7 +180,7 @@ def create_output_pointing_timeline(jitter_x, jitter_y, frame_osf, ndrCumSeq ):
   
   
 
-def channel_noise_estimator(channel, key, yaw_jitter, pitch_jitter, frame_osf, frame_time, opt):
+def channel_noise_estimator(channel, key, yaw_jitter, pitch_jitter, frame_osf, frame_time, opt, total_observing_time, exposure_time):
 
   # Jitter Noise
   jitNoise, outputPointingTL = create_jitter_noise(channel, yaw_jitter, pitch_jitter, frame_osf, frame_time, key, opt)
@@ -191,6 +191,18 @@ def channel_noise_estimator(channel, key, yaw_jitter, pitch_jitter, frame_osf, f
     frame_time * channel.ndr_sequence * channel.tl_units
   noise += channel.emission.sed[channel.offs::channel.osf].reshape(-1,1) *\
     frame_time * channel.ndr_sequence * channel.tl_units
+
+  # multiple orders reshaping
+  if (hasattr(channel.opt, "dispersion") and (isinstance(channel.opt.dispersion, list))):
+
+    orig_shape = tuple(channel.opt.array_geometry.val.astype(int))
+
+    # Split the x axis by however many number of traces (dispersion files) we have.
+    # Then, sum over axis 0 which will be the summation of all of our 'fake'
+    # focal planes. Final shape is (Ny, Nx, Nndr) to match the original noise array
+    # in this section.
+
+    noise = np.array(np.split(noise, len(channel.opt.dispersion), 1)).sum(axis=0)
 
   noise =  np.rollaxis(noise,2,0)
   noise *= channel.opt.qe_rms_matrix
@@ -207,7 +219,7 @@ def channel_noise_estimator(channel, key, yaw_jitter, pitch_jitter, frame_osf, f
       startIdx = np.int(indxRanges[i])
       endIdx   = np.int(indxRanges[i+1])
       noise[:,:,startIdx:endIdx] = np.random.poisson(noise[:,:,startIdx:endIdx])
-  
+
   # Create ramps
   noise_ = np.zeros((noise.shape[0], noise.shape[1], noise.shape[2]))
   for i in range(0, noise.shape[2], np.int(opt.timeline.multiaccum())):
@@ -222,6 +234,24 @@ def channel_noise_estimator(channel, key, yaw_jitter, pitch_jitter, frame_osf, f
       endIdx   = np.int(indxRanges[i+1])
       useShape = (channel.tl_shape[0], channel.tl_shape[1],  endIdx-startIdx)
       noise[:,:,startIdx:endIdx] += np.random.normal(scale=channel.opt.detector_pixel.sigma_ro(), size=useShape)*channel.tl_units
+
+  # Average frames together to coincide with JWST readout pattern
+  # opt.timeline.multiaccum() is equivalent to JWST's groups per integration
+  # Get number of frames per group, then average blocks of size `frm_per_grp`
+  # together. Output array should be of shape
+  # (noise.shape[0] / frm_per_grp, noise.shape[1], noise.shape[0])
+  #
+  # Added 2020-06-04 by David Wright
+  if(opt.timeline.jwst()):
+    # allocate new array to hold reduced datacube
+    noise_reduced = np.zeros((noise.shape[0], noise.shape[1], np.int(noise.shape[2] // opt.timeline.jwst.nsamples())))
+
+    # loop over original array and average in blocks of `frm_per_grp`
+    for i in np.arange(0, noise.shape[2], np.int(opt.timeline.jwst.nsamples())):
+      noise_reduced[..., np.int(i / opt.timeline.jwst.nsamples())] = \
+        noise[..., i:i+np.int(opt.timeline.jwst.nframes())].mean(axis=2)
+
+      noise = noise_reduced
 
   return key, noise, outputPointingTL
 
@@ -248,7 +278,7 @@ def run(opt, channel, frame_time, total_observing_time, exposure_time):
     
   for key in channel.keys():
     
-    key, noise,  outputPointingTl = channel_noise_estimator(channel[key], key, yaw_jitter, pitch_jitter, frame_osf, frame_time, opt)
+    key, noise,  outputPointingTl = channel_noise_estimator(channel[key], key, yaw_jitter, pitch_jitter, frame_osf, frame_time, opt, total_observing_time, exposure_time)
     channel[key].noise = noise
     channel[key].outputPointingTl = outputPointingTl
     
