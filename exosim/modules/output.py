@@ -31,6 +31,13 @@ def run(opt, channel, planet):
   
     
   for key in channel.keys():
+
+    # reshape due to jwst readout pattern
+    if((hasattr(opt.timeline, "jwst")) and (opt.timeline.jwst()=='True')):
+      tl_shape = channel[key].tl_shape[-1] // np.int(opt.timeline.nsamples())
+    else:
+      tl_shape = channel[key].tl_shape[-1]
+
     n_ndr      = channel[key].tl_shape[-1]
     multiaccum = np.int(opt.timeline.multiaccum())
     n_exp      = n_ndr // multiaccum
@@ -53,10 +60,7 @@ def run(opt, channel, planet):
     hdulist = fits.HDUList(hdu)
     
     
-    
-    
-    # Make the shape coincide with changes in noise.py for JWST readout patterns
-    for i in range(channel[key].tl_shape[-1] // np.int(opt.timeline.jwst.nsamples())):
+    for i in range(tl_shape):
       hdu = fits.ImageHDU(channel[key].noise[..., i].astype(np.float32), name = 'NOISE')
       hdu.header['EXPNUM'] = (i//multiaccum, 'Exposure Number')
       hdu.header['ENDRNUM'] = (i%multiaccum, 'NDR Number')
