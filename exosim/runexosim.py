@@ -1,6 +1,7 @@
 import numpy           as     np
 import pylab           as     pl
 import sys, time, os
+sys.path.append("..")
 import exosim
 from exosim.lib.exolib import exosim_msg
 
