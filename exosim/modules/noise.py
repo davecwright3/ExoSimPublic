@@ -4,7 +4,14 @@ import quantities as pq
 from numba import njit
 
 from exosim.lib.exolib import exosim_msg
+from exosim.lib.exolib import reshape_noise
 from ..lib import exolib
+
+
+from dask.distributed import Client
+import dask.delayed as delayed
+import dask.array as da
+
 
 @njit
 def c_create_jitter_noise(fp, osf, 
@@ -46,11 +53,11 @@ def c_create_jitter_noise(fp, osf,
   """
   
   # Here time is first axis for memory access efficiency. Will be transposed before return
-  time_line = np.zeros( (ndr_sequence.size,
+  time_line = np.zeros((ndr_sequence.size,
                          np.int(fp.shape[0]//osf),
-                         np.int(fp.shape[1]//osf) ) ).astype(np.float32)
-  index =   frame_osf*ndr_cumulative_sequence
-  nclk  = frame_osf*ndr_sequence
+                         np.int(fp.shape[1]//osf))).astype(np.float32)
+  index = frame_osf*ndr_cumulative_sequence
+  nclk = frame_osf*ndr_sequence
 
 
   for ndr in range(index.shape[0]):
@@ -90,7 +97,7 @@ def c_create_jitter_noise(fp, osf,
 
 
 
-def create_jitter_noise(channel, x_jit, y_jit, frame_osf, frame_time, key, opt):
+def create_jitter_noise(channel, x_jit, y_jit, frame_osf, frame_time, key, opt, visualize=False):
   
   outputPointingTL = create_output_pointing_timeline(x_jit, y_jit, frame_osf, 
                                 ndrCumSeq = channel.ndr_cumulative_sequence )
@@ -130,7 +137,64 @@ def create_jitter_noise(channel, x_jit, y_jit, frame_osf, frame_time, key, opt):
   noise = np.zeros((int(fp.shape[0]//osf),
                     int(fp.shape[1]//osf),
                     0)).astype(np.float32)
-  indxRanges = np.arange(0,7)*channel.tl_shape[2]//6
+
+
+  # multiple orders reshaping
+  if (hasattr(channel.opt, "dispersion") and (isinstance(channel.opt.dispersion, list))):
+    exosim_msg("Using Dask for parellized processing of timeline datacube...")
+    cores = opt.common.num_cores
+    lim = cores // len(channel.opt.dispersion)
+    indxRanges = np.arange(0,lim+1)*channel.tl_shape[2]//lim
+
+    # need to separate the "fake" focal planes so that they don't bleed into one another
+    # when jitter is applied.
+
+    client = Client(n_workers=cores,
+                    memory_limit=f'{opt.common.gb_per_core}GB')
+    temp_shape = (noise.shape[0], noise.shape[1] // len(channel.opt.dispersion), 0)
+    fp = np.array(np.split(fp, len(channel.opt.dispersion), 1))
+    results = []
+    for d,_ in enumerate(channel.opt.dispersion):
+      jitters= []
+      for i in range(len(indxRanges)-1):
+        startIdx = int(indxRanges[i])
+        endIdx   = int(indxRanges[i+1])
+
+        tfp = fp[d].astype(np.float32)
+        tosf = osf.astype(np.int32)
+        tndr = channel.ndr_sequence[startIdx:endIdx].astype(np.int32)
+        tndrs = channel.ndr_cumulative_sequence[startIdx:endIdx].astype(np.int32)
+        tfosf = frame_osf.astype(np.int32)
+        tjitx = jitter_x.magnitude.astype(np.int32)
+        tjity = jitter_y.magnitude.astype(np.int32)
+        txoff = offs.astype(np.int32)
+        tyoff = offs.astype(np.int32)
+
+        jitter = delayed(c_create_jitter_noise)(tfp,
+                                                tosf,
+                                                tndr,
+                                                tndrs,
+                                                tfosf,
+                                                tjitx,
+                                                tjity,
+                                                x_offs = txoff,
+                                                y_offs = tyoff)
+        jitters.append(jitter)
+
+      result = da.concatenate([da.from_delayed(jit, dtype='float32',shape=(temp_shape[0],temp_shape[1],endIdx-startIdx))
+                                 for jit in jitters],axis=2)
+      results.append(result)
+    noise = da.stack(results,axis=0)
+
+    noise = da.concatenate((noise[da.arange(noise.shape[0])]),axis=1)
+    if visualize:
+      noise.visualize(filename='exosim-dask-noise.png')
+    noise = noise.compute()
+    client.close()
+
+  else:
+    indxRanges = np.arange(0,7) *channel.tl_shape[2] // 6
+
   for i in range(len(indxRanges)-1):
     startIdx = int(indxRanges[i])
     endIdx   = int(indxRanges[i+1])
@@ -232,28 +296,22 @@ def channel_noise_estimator(channel, key, yaw_jitter, pitch_jitter, frame_osf, f
     for i in range(len(indxRanges)-1):
       startIdx = np.int(indxRanges[i])
       endIdx   = np.int(indxRanges[i+1])
-      useShape = (channel.tl_shape[0], channel.tl_shape[1],  endIdx-startIdx)
+
+      useShape = (channel.tl_shape[0], noise.shape[1],  endIdx-startIdx)
+
       noise[:,:,startIdx:endIdx] += np.random.normal(scale=channel.opt.detector_pixel.sigma_ro(), size=useShape)*channel.tl_units
 
   # Average frames together to coincide with JWST readout pattern
   # opt.timeline.multiaccum() is equivalent to JWST's groups per integration
   # Get number of frames per group, then average blocks of size `frm_per_grp`
   # together. Output array should be of shape
-  # (noise.shape[0] / frm_per_grp, noise.shape[1], noise.shape[0])
+  # (noise.shape[0], noise.shape[1], noise.shape[2] // frm_per_grp)
   #
   # Added 2020-06-04 by David Wright
-  if(opt.timeline.jwst()):
-    # allocate new array to hold reduced datacube
-    noise_reduced = np.zeros((noise.shape[0], noise.shape[1], np.int(noise.shape[2] // opt.timeline.jwst.nsamples())))
-
-    # loop over original array and average in blocks of `frm_per_grp`
-    for i in np.arange(0, noise.shape[2], np.int(opt.timeline.jwst.nsamples())):
-      noise_reduced[..., np.int(i / opt.timeline.jwst.nsamples())] = \
-        noise[..., i:i+np.int(opt.timeline.jwst.nframes())].mean(axis=2)
-
-      noise = noise_reduced
-
+  if((hasattr(opt.timeline, "jwst")) and (opt.timeline.jwst()=='True')):
+    noise = reshape_noise(opt, noise)
   return key, noise, outputPointingTL
+
 
 def run(opt, channel, frame_time, total_observing_time, exposure_time):
   exosim_msg('Create noise timelines ... ')

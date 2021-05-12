@@ -189,7 +189,35 @@ def sed_propagation(sed, transmission, emissivity=None, temperature = None):
     sed.sed = sed.sed + emissivity.sed*planck(sed.wl, temperature)
 
   return sed
-  
+
+def reshape_noise(opt, noise):
+  """Reshape a noise datacube.
+
+  Given the collection of ExoSim options `opt` and the `noise` datacube, use the
+  details found within `opt` to reshape the datacube according to the user's specifications.
+
+  Parameters
+  ----------
+  opt : object
+      The object containing the configuration for the ExoSim simulation.
+  noise : numpy.ndarray
+      The 3D datacube containing the time domain data.
+
+  Returns
+  -------
+  numpy.ndarray
+      The `noise` datacube reshaped accordingly.
+  """
+
+  noise_reduced = np.zeros((noise.shape[0], noise.shape[1], np.int(noise.shape[2] // opt.timeline.nsamples())))
+   # loop over original array and average in blocks of `frm_per_grp`for i in np.arange(0, noise.shape[2], np.int(opt.timeline.nsamples())):
+  for i in np.arange(0, noise.shape[2], np.int(opt.timeline.nsamples())):
+    noise_reduced[..., np.int(i / opt.timeline.nsamples())] = \
+      noise[..., i:i+np.int(opt.timeline.nframes())].mean(axis=2)
+
+  noise = noise_reduced
+  return noise
+ 
 def Psf_Interp(zfile, delta_pix, WavRange):
     ''' 
     PSF Interpolation
@@ -256,7 +284,7 @@ def get_webb_psf_dims(zfile,osf):
     return num_pix_y,num_pix_x
 
 def webb_Psf_Interp(zfile, osf, WavRange, y_trace):
-    '''WebbPSF Interpolation
+    """WebbPSF Interpolation
 
     Use a set of PSFs made by WebbPSF to fill the wavelength range with monochromatic PSFs.
 
@@ -266,17 +294,19 @@ def webb_Psf_Interp(zfile, osf, WavRange, y_trace):
       input PSF fits file
     osf : scalar
       detector oversampling factor
-    WavRange : ndarray [units of length]
+    WavRange : numpy.ndarray [units of length]
       array of wavelengths in micron
-    y_trace : ndarray [units of length]
+    y_trace : numpy.ndarray [units of length]
       Array of y positions on trace
 
 
     Returns
     -------
-    PSF interpolated data cube. Area normalised to unity.
+    numpy.ndarray
+      PSF interpolated data cube. Area normalised to unity.
 
-    '''
+    """
+
     hdulist = pyfits.open(zfile)
     NAXIS1, NAXIS2 = hdulist[0].header['NAXIS1'], hdulist[0].header['NAXIS2']
     fits_osf = hdulist[0].header['OVERSAMP']
