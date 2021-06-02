@@ -1,0 +1,95 @@
+<root>
+  <common>
+    <logbinres val="1600" units="" comment="Resoving power for common spectral binnin. A linear binning wavelength integral is estimated as wl_min/R"/>
+    <wl_min val="2.8" units="micron" comment="Shortest wavelength in simularion used for binning input spectra"/>
+    <wl_max val="5.0" units="micron" comment="Shortest wavelength in simularion used for binning input spectra"/>
+    <ExoSimOutputPath val="/home/dcw/codes/exosim/outputs/pandexo-comp/" comment="output directory to store Sims" />
+    <ConfigPath val = "__path__" />
+    <num_cores val="4" comment="Number of cores allowed to use for multiprocessing"/>
+    <gb_per_core="1" comment="Gigabytes of memory per core that are allowed for multiprocessing"/>
+
+  </common>
+
+  <aocs>
+    <PointingModel val="__path__/data/instrument/pointing_model.csv" comment="Jitter PSD in units of deg**2/Hz" />
+    <pointing_rms val="4.0e-5" units="deg" comment="RMS of desired jitter. Omit this keyword to use the normalisation of the PSD" />
+    <pointing_scan_throw val="-8" units="arcsec" comment="Positive value enables scan-mode simulation. The value defines the throw of the scan, in arcsec. The period of the scan is defined by the exposure time." />
+  </aocs>
+
+  <astroscene>
+    <transit_is_primary val = "True"/>
+    <apply_phase_curve val = "False" comment="If True, phase curve effects are added to the light curve"/>
+    <use_planck_spectrum val = "True" comment="If True, use a Planck function for the stllar sed, otherwise use Phoenix"/>
+    <planet val = 'gj1214b' />
+    <planetCR val="__path__/data/planetary/transmission/0400K_gj1214.dat" comment="planet/star contrast ratio"/>
+    <OpenExoplanetCatalogue val = "/home/jwexo/ancil/oec/systems/" comment="Path to openexoplanet catalogue. Null string downloads from URL."/>
+    <StarSEDPath val="/home/jwexo/ancil/phoenix/Grids/BT-Settl/CIFIST2011_2015/FITS" />
+    <StarLimbDarkening val="__path__/data/star/ldc_coeffs.dat" comment="Path to Model Limb Darkening coefficients table"/>
+  </astroscene>
+
+  <noise>
+    <EnableSpatialJitter val="False" />
+    <EnableSpectralJitter val="False" />
+    <EnableShotNoise val="True" />
+    <EnableReadoutNoise val="False" />
+  </noise>
+
+  <timeline>
+    <exposure_time val="1.02183" units="s" comment="time for one exposure containg set of NDRs" />
+    <multiaccum val="2" units="" comment="number of NDRs per exposure" />
+    <frame_rate val="2.9359" units="1/s" comment="frame rate in SPS" />
+    <nGND val='1' units="" comment="duration of reset event in units of 1/frame_rate" />
+    <nNDR0 val='1' units="" comment="Integration time of first NDR in units of 1/frame_rate" />
+    <nRST val = '0' units="" comment="Time lapse between last NDR and reset in units of 1/frame_rate" />
+    <before_transit val="0.05" units="" comment="fraction of T14 for pre-transit observation" />
+    <after_transit val="0.05"  units="" comment="fraction of T14 for post-transit observation" />
+  </timeline>
+
+<common_optics>
+  <!--optical_surface type="mirror" transmission="__path__/data/instrument/jwst/common/jw_primary_mirror_reflectivity.csv"  emissivity="__path__/data/instrument/jwst/common/jw_primary_mirror_emissivity.csv" val="40" units="K" comment="M1"/-->
+  <!--optical_surface type="mirror" transmission="__path__/data/instrument/jwst/common/jw_secondary_mirror_reflectivity.csv"  emissivity="__path__/data/instrument/jwst/common/jw_secondary_mirror_emissivity.csv" val="40" units="K" comment="M2"/-->
+  <!--optical_surface type="mirror" transmission="__path__/data/instrument/jwst/common/jw_tertiary_mirror_reflectivity.csv"  emissivity="__path__/data/instrument/jwst/common/jw_tertiary_mirror_emissivity.csv" val="40" units="K" comment="M3"/-->
+  <optical_surface type="mirror" transmission="__path__/data/instrument/mirror_reflectivity_ideal.csv"  emissivity="__path__/data/instrument/mirror_emissivity_ideal.csv" val="40" units="K" comment="M1"/>
+  <optical_surface type="mirror" transmission="__path__/data/instrument/jwst/common/jwst_common_transmission.csv"  emissivity="__path__/data/instrument/mirror_emissivity_ideal.csv" val="40" units="K" comment="M2"/>
+  <TelescopeEffectiveDiameter val="6.5" units="m" />
+</common_optics>
+
+<channel name="NIRCam F444W Grism-R Only Shot Noise" comment="NIRCam F444W Grism-R Only Shot Noise" type="spectrometer">
+  <is_spec val = "True" comment="if True, channel is a spectrometer, otherwise a photometer (no spectral dispersion)"/>
+  <slit_width val="64" units="" comment="Size of slit image in units of detector pixels"/>
+  <dispersion path="__path__/data/instrument/jwst/nircam/nircam_trace.csv" val="0, 576" units="micron" comment="Reference pixel given as (x,y)"/>
+  <!--dispersion path="__path__/data/instrument/dispersion-example.csv" val="3840, 288" units="micron" comment="Reference pixel given as (x,y)"/-->
+  <ld val="0.6, 0.0002090249, 15" units=""   comment="Wavelength solution (q, m, x_ref): wl = q + m(x - x_ref) where x is th pixel coordinate in units of micron"/>
+  <array_geometry val="64, 2048" units = "" comment="pixel count"/>
+  <!--optical_surface type="grating" transmission="__path__/data/instrument/jwst/nircam/nircam-internal-thru.csv"  val="40" units="K" comment="D0"/-->
+  <!--optical_surface type="grating" transmission="__path__/data/instrument/jwst/nircam/nircam-f444w-thru.csv"  val="40" units="K" comment="D0"/-->
+  <!--optical_surface type="grating" transmission="__path__/data/instrument/jwst/nircam/nircam-grism-thru.csv"  val="40" units="K" comment="D0"/-->
+  <!--optical_surface type="dichroic" transmission="__path__/data/instrument/jwst/nircam/nircam-lw-dbs-thru.csv"  val="40" units="K" comment="D0"/-->
+  <optical_surface type="dichroic" transmission="__path__/data/instrument/dichroic_ideal.csv"  val="40" units="K" comment="D0"/>
+  <optical_surface type="dichroic" transmission="__path__/data/instrument/jwst/nircam/nircam-tot-thru.csv"  val="40" units="K" comment="D0"/>
+  <!--optical_surface type="grating" transmission="__path__/data/instrument/grating_mwir_v0.csv"   val="40" units="K" comment=""/-->
+  <wfno val="9.07" units="" comment="The working f/#" />
+  <osf val="3.0" units="" comment="Oversample each detector pixel by this amount. Need to be changed" />
+  <pix_offs val="0.0" units = "" comment="Detector pixel center offset" />
+  <qe val="__path__/data/instrument/jwst/nircam/nircam_lw_qe.csv" comment="" />
+  <qe_rms_matrix_file val = "None" comment="[Default 'None'] Path to CSV file containing matrix of QE of pixels."/>
+  <plate_scale val="1.750e-5" units="deg" comment="In degrees per pixel" />
+  <webb_psf>
+    <use_webbpsf val = "True" comment="whether or not to use WebPSF to calculate psfs"/>
+    <psf_file val= "/home/dcw/codes/exosim/exosim/data/instrument/jwst/nircam/nircam_lw_psfs.fits"/>
+  </webb_psf>
+  <detector_pixel>
+    <pixel_size val="18" units="micron" />
+    <!-- This is the average of the dark current / pixel for both detectors. NRS1=0.0092, NRS2=0.0057/-->
+    <!--Idc val="0.00745" units="1/s" comment="Detector dark current"/-->
+    <Idc val="0.0" units="1/s" comment="Detector dark current"/>
+    <!--Idc val="0.0092" units="1/s" comment="Detector dark current"/-->
+    <!-- This is the average of the readout noise for both detectors. NRS1=5.17, NRS2=6.60/-->
+    <!--sigma_ro val="5.885" units="" comment="Detector redout noise in e-rms"/-->
+    <sigma_ro val="13.5" units="" comment="Detector redout noise in e-rms"/>
+    <!--Couldn't find diffusion length-->
+    <pixel_diffusion_length val="0.0" units="micron" />
+  </detector_pixel>
+</channel>
+
+</root>
